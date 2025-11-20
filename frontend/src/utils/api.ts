@@ -25,9 +25,20 @@ export const api = {
 
   // Upload mask
   async uploadMask(imageId: string, maskBlob: Blob): Promise<MaskData> {
+    console.log('API uploadMask called with:');
+    console.log('  - imageId:', imageId);
+    console.log('  - maskBlob size:', maskBlob.size);
+    console.log('  - API_BASE_URL:', API_BASE_URL);
+    console.log('  - Full URL:', `${API_BASE_URL}/upload-mask`);
+
     const formData = new FormData();
     formData.append('image_id', imageId);
     formData.append('file', maskBlob, 'mask.png');
+
+    console.log('FormData entries:');
+    for (const [key, value] of formData.entries()) {
+      console.log(`  - ${key}:`, value);
+    }
 
     const response = await axios.post<MaskData>(
       `${API_BASE_URL}/upload-mask`,

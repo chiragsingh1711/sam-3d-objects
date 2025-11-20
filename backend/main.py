@@ -179,10 +179,24 @@ async def upload_mask(
     Returns:
         - mask_id: Unique identifier for the mask
     """
+    print(f"[DEBUG] upload_mask called with image_id: {image_id}")
+    print(f"[DEBUG] Uploaded file: {file.filename}, content_type: {file.content_type}")
+    print(f"[DEBUG] UPLOAD_DIR: {UPLOAD_DIR}")
+    print(f"[DEBUG] UPLOAD_DIR absolute: {UPLOAD_DIR.absolute()}")
+
     # Check if image exists
     image_path = UPLOAD_DIR / f"{image_id}.png"
+    print(f"[DEBUG] Looking for image at: {image_path}")
+    print(f"[DEBUG] Image exists: {image_path.exists()}")
+
     if not image_path.exists():
-        raise HTTPException(status_code=404, detail="Image not found")
+        print(f"[DEBUG] Listing files in UPLOAD_DIR:")
+        if UPLOAD_DIR.exists():
+            for f in UPLOAD_DIR.iterdir():
+                print(f"[DEBUG]   - {f.name}")
+        else:
+            print(f"[DEBUG] UPLOAD_DIR does not exist!")
+        raise HTTPException(status_code=404, detail=f"Image not found: {image_id}")
 
     # Read mask
     contents = await file.read()

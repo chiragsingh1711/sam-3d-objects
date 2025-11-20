@@ -62,7 +62,14 @@ function App() {
 
   const handleMaskComplete = useCallback(
     async (maskBlob: Blob) => {
-      if (!imageData) return;
+      if (!imageData) {
+        console.error('No imageData available');
+        return;
+      }
+
+      console.log('Uploading mask for image ID:', imageData.imageId);
+      console.log('Mask blob size:', maskBlob.size, 'bytes');
+      console.log('Mask blob type:', maskBlob.type);
 
       try {
         await api.uploadMask(imageData.imageId, maskBlob);
