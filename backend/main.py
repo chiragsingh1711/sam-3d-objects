@@ -370,6 +370,15 @@ async def process_generation(
         image_np = np.array(combined_image)
         mask_np = np.array(mask)
         print(f"[DEBUG] Converted to numpy: image shape={image_np.shape}, mask shape={mask_np.shape}")
+        print(f"[DEBUG] Image dtype={image_np.dtype}, min={image_np.min()}, max={image_np.max()}")
+        print(f"[DEBUG] Mask dtype={mask_np.dtype}, min={mask_np.min()}, max={mask_np.max()}")
+        print(f"[DEBUG] Mask unique values: {np.unique(mask_np)}")
+        print(f"[DEBUG] Mask non-zero pixels: {np.count_nonzero(mask_np)}/{mask_np.size}")
+
+        # Normalize mask to binary (0 or 1) - inference expects this
+        mask_np = (mask_np > 127).astype(np.float32)
+        print(f"[DEBUG] After normalization - Mask unique values: {np.unique(mask_np)}")
+        print(f"[DEBUG] After normalization - Mask pixels == 1: {np.sum(mask_np == 1)}")
 
         # Run inference
         output = inference(
