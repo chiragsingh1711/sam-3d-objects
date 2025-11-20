@@ -135,6 +135,78 @@ Nan Yang,
 Yael Yungster
 
 
+## Web Application Frontend
+
+We provide a modern, dark-themed web application for easily creating 3D models from images through an intuitive UI.
+
+### Features
+
+- **Image Upload**: Drag-and-drop or browse to upload images
+- **Interactive Mask Drawing**: Paint objects you want to convert to 3D
+- **Real-time 3D Visualization**: View generated models with Three.js
+- **Multiple Export Formats**: Download PLY (Gaussian splats) or GLB (textured meshes)
+- **Configurable Generation**: Control seed, post-processing, and texture baking
+- **Dark Theme UI**: Minimalistic Apple-inspired design
+
+### Running the Web Application
+
+#### 1. Start the Backend Server
+
+First, install the backend dependencies:
+
+```bash
+cd backend
+pip install -r requirements.txt
+cd ..
+```
+
+Then start the FastAPI server:
+
+```bash
+# Make sure you have the model checkpoints downloaded first
+# See doc/setup.md for checkpoint download instructions
+
+python backend/main.py
+```
+
+The backend API will be available at `http://localhost:8000`
+
+#### 2. Start the Frontend Development Server
+
+In a new terminal, install frontend dependencies:
+
+```bash
+cd frontend
+npm install
+```
+
+Then start the development server:
+
+```bash
+npm run dev
+```
+
+The web application will be available at `http://localhost:5173`
+
+#### 3. Build for Production (Optional)
+
+To build the frontend for production deployment:
+
+```bash
+cd frontend
+npm run build
+```
+
+The built files will be in `frontend/dist/` and can be served with any static file server.
+
+### Usage
+
+1. **Upload Image**: Drag and drop or click to upload an image
+2. **Draw Mask**: Use the brush tool to paint the object you want to reconstruct
+3. **Configure Settings**: Adjust generation parameters (optional)
+4. **Generate**: Click "Generate 3D Model" and wait for processing
+5. **View & Download**: Interact with the 3D model and download PLY or GLB files
+
 ## Citing SAM 3D Objects
 
 If you use SAM 3D Objects in your research, please use the following BibTeX entry.
