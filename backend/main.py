@@ -366,10 +366,15 @@ async def process_generation(
         jobs[job_id]["message"] = "Running inference (Stage 1)..."
         print(f"[DEBUG] Starting inference with seed={seed}")
 
+        # Convert to numpy arrays (inference expects numpy, not PIL)
+        image_np = np.array(combined_image)
+        mask_np = np.array(mask)
+        print(f"[DEBUG] Converted to numpy: image shape={image_np.shape}, mask shape={mask_np.shape}")
+
         # Run inference
         output = inference(
-            image=combined_image,
-            mask=mask,
+            image=image_np,
+            mask=mask_np,
             seed=seed
         )
         print(f"[DEBUG] Inference completed successfully")
