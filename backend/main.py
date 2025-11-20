@@ -90,22 +90,46 @@ def get_inference_instance():
     global inference_instance, Inference, inference_module
 
     if inference_instance is None:
+        print(f"[DEBUG] Initializing inference instance for the first time")
+
         # Import inference module
         notebook_path = Path(__file__).parent.parent / "notebook"
+        print(f"[DEBUG] Adding notebook path to sys.path: {notebook_path}")
         sys.path.insert(0, str(notebook_path))
 
-        import inference as inference_module
-        Inference = inference_module.Inference
+        print(f"[DEBUG] Importing inference module...")
+        try:
+            import inference as inference_module
+            Inference = inference_module.Inference
+            print(f"[DEBUG] Inference module imported successfully")
+        except Exception as e:
+            print(f"[ERROR] Failed to import inference module: {e}")
+            import traceback
+            traceback.print_exc()
+            raise
 
         # Load model
         config_path = Path(__file__).parent.parent / "checkpoints" / "hf" / "pipeline.yaml"
+        print(f"[DEBUG] Config path: {config_path}")
+        print(f"[DEBUG] Config exists: {config_path.exists()}")
+
         if not config_path.exists():
             raise FileNotFoundError(
                 f"Config file not found at {config_path}. "
                 "Please download model weights from HuggingFace first."
             )
 
-        inference_instance = Inference(str(config_path), compile=False)
+        print(f"[DEBUG] Creating Inference instance with config: {config_path}")
+        try:
+            inference_instance = Inference(str(config_path), compile=False)
+            print(f"[DEBUG] Inference instance created successfully")
+        except Exception as e:
+            print(f"[ERROR] Failed to create Inference instance: {e}")
+            import traceback
+            traceback.print_exc()
+            raise
+    else:
+        print(f"[DEBUG] Reusing existing inference instance")
 
     return inference_instance
 
@@ -298,23 +322,33 @@ async def process_generation(
 ):
     """Background task for 3D generation"""
     try:
+        print(f"[DEBUG] Starting generation for job {job_id}")
+
         # Update status
         jobs[job_id]["status"] = "processing"
         jobs[job_id]["progress"] = 0.1
         jobs[job_id]["message"] = "Loading models..."
+        print(f"[DEBUG] Status updated to processing")
 
         # Get inference instance
+        print(f"[DEBUG] About to call get_inference_instance()")
         inference = get_inference_instance()
+        print(f"[DEBUG] Inference instance loaded successfully")
 
         jobs[job_id]["progress"] = 0.2
         jobs[job_id]["message"] = "Loading image and mask..."
+        print(f"[DEBUG] Loading images from:")
+        print(f"[DEBUG]   - image_path: {image_path}")
+        print(f"[DEBUG]   - mask_path: {mask_path}")
 
         # Load image and mask
         image = Image.open(image_path)
         mask = Image.open(mask_path)
+        print(f"[DEBUG] Images loaded: image={image.size}, mask={mask.size}")
 
         # Combine image and mask into RGBA
         if image.mode == "RGB":
+            print(f"[DEBUG] Converting RGB to RGBA with mask")
             image_array = np.array(image)
             mask_array = np.array(mask)
 
@@ -326,9 +360,11 @@ async def process_generation(
             combined_image = Image.fromarray(rgba, "RGBA")
         else:
             combined_image = image
+            print(f"[DEBUG] Using image as-is (mode: {image.mode})")
 
         jobs[job_id]["progress"] = 0.3
         jobs[job_id]["message"] = "Running inference (Stage 1)..."
+        print(f"[DEBUG] Starting inference with seed={seed}")
 
         # Run inference
         output = inference(
@@ -336,6 +372,7 @@ async def process_generation(
             mask=mask,
             seed=seed
         )
+        print(f"[DEBUG] Inference completed successfully")
 
         jobs[job_id]["progress"] = 0.7
         jobs[job_id]["message"] = "Saving outputs..."
@@ -368,6 +405,13 @@ async def process_generation(
         jobs[job_id]["result"] = result
 
     except Exception as e:
+        print(f"[ERROR] Generation failed for job {job_id}")
+        print(f"[ERROR] Exception type: {type(e).__name__}")
+        print(f"[ERROR] Exception message: {str(e)}")
+        import traceback
+        print(f"[ERROR] Full traceback:")
+        traceback.print_exc()
+
         jobs[job_id]["status"] = "failed"
         jobs[job_id]["error"] = str(e)
         jobs[job_id]["message"] = f"Generation failed: {str(e)}"
