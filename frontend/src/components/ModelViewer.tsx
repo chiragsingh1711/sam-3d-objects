@@ -143,7 +143,7 @@ export const ModelViewer: React.FC<ModelViewerProps> = ({
     metalness: 0.2,
     roughness: 0.8,
     transformMode: null,
-    backgroundColor: '#1c1c1e',
+    backgroundColor: '#0a0a0a',
     cameraFov: 50,
   });
 
@@ -243,6 +243,7 @@ export const ModelViewer: React.FC<ModelViewerProps> = ({
           )}
 
           <OrbitControls
+            enabled={!controls.transformMode}
             enableDamping
             dampingFactor={0.05}
             minDistance={0.5}
@@ -300,7 +301,7 @@ export const ModelViewer: React.FC<ModelViewerProps> = ({
               <label className="block">
                 <span className="text-sm">Background Color</span>
                 <div className="flex gap-2">
-                  {['#1c1c1e', '#000000', '#ffffff', 'transparent'].map((color) => (
+                  {['#0a0a0a', '#000000', '#141414', 'transparent'].map((color) => (
                     <button
                       key={color}
                       onClick={() => updateControl('backgroundColor', color)}
@@ -310,10 +311,10 @@ export const ModelViewer: React.FC<ModelViewerProps> = ({
                           : 'border-dark-border'
                       }`}
                       style={{
-                        backgroundColor: color === 'transparent' ? '#1c1c1e' : color,
+                        backgroundColor: color === 'transparent' ? '#0a0a0a' : color,
                         backgroundImage:
                           color === 'transparent'
-                            ? 'repeating-conic-gradient(#888 0% 25%, #444 0% 50%) 50% / 8px 8px'
+                            ? 'repeating-conic-gradient(#666 0% 25%, #222 0% 50%) 50% / 8px 8px'
                             : undefined,
                       }}
                     />
@@ -470,9 +471,8 @@ export const ModelViewer: React.FC<ModelViewerProps> = ({
             </div>
 
             {/* Info */}
-            <div className="pt-4 border-t border-dark-border text-xs text-dark-text-tertiary space-y-1">
+            <div className="pt-4 border-t border-dark-border text-xs text-dark-text-tertiary">
               <p>Model Type: <span className="text-dark-text-secondary">{modelType.toUpperCase()}</span></p>
-              <p>Controls: Drag to rotate • Scroll to zoom • Right-click to pan</p>
             </div>
           </div>
         </div>

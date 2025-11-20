@@ -9,18 +9,18 @@ export default {
       colors: {
         dark: {
           bg: '#000000',
-          surface: '#1c1c1e',
-          elevated: '#2c2c2e',
-          border: '#38383a',
+          surface: '#0a0a0a',
+          elevated: '#141414',
+          border: '#1f1f1f',
           text: {
             primary: '#ffffff',
-            secondary: '#98989d',
-            tertiary: '#636366',
+            secondary: '#a0a0a0',
+            tertiary: '#5a5a5a',
           }
         },
         accent: {
-          primary: '#007aff',
-          hover: '#0051d5',
+          primary: '#0a84ff',
+          hover: '#0066cc',
         }
       },
       fontFamily: {

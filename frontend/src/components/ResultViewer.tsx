@@ -101,11 +101,6 @@ export const ResultViewer: React.FC<ResultViewerProps> = ({
           modelType={viewMode}
         />
       </div>
-
-      {/* Instructions */}
-      <div className="card m-4 p-3 text-center text-dark-text-tertiary text-sm">
-        Click and drag to rotate • Scroll to zoom • Right-click and drag to pan
-      </div>
     </div>
   );
 };
