@@ -55,7 +55,7 @@ export const api = {
   async generate3D(
     imageId: string,
     options: GenerationOptions
-  ): Promise<{ job_id: string }> {
+  ): Promise<{ jobId: string }> {
     const formData = new FormData();
     formData.append('image_id', imageId);
 
@@ -67,7 +67,7 @@ export const api = {
     formData.append('with_texture_baking', options.withTextureBaking.toString());
     formData.append('with_layout_postprocess', options.withLayoutPostprocess.toString());
 
-    const response = await axios.post<{ job_id: string }>(
+    const response = await axios.post<{ jobId: string }>(
       `${API_BASE_URL}/generate`,
       formData,
       {

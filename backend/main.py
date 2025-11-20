@@ -74,12 +74,15 @@ class GenerationRequest(BaseModel):
 
 class JobStatus(BaseModel):
     """Job status response"""
-    job_id: str
+    jobId: str = Field(..., alias="job_id")  # Use camelCase for frontend
     status: str  # pending, processing, completed, failed
     progress: float  # 0.0 to 1.0
     message: str
     result: Optional[Dict[str, Any]] = None
     error: Optional[str] = None
+
+    class Config:
+        populate_by_name = True
 
 
 def get_inference_instance():
@@ -154,7 +157,7 @@ async def upload_image(file: UploadFile = File(...)):
         image.save(image_path, "PNG")
 
         return {
-            "image_id": image_id,
+            "imageId": image_id,  # Use camelCase for frontend compatibility
             "filename": file.filename,
             "size": {"width": image.width, "height": image.height},
             "mode": image.mode
@@ -217,7 +220,7 @@ async def upload_mask(
         mask.save(mask_path, "PNG")
 
         return {
-            "mask_id": image_id,
+            "maskId": image_id,  # Use camelCase for frontend compatibility
             "size": {"width": mask.width, "height": mask.height}
         }
 
@@ -280,7 +283,7 @@ async def generate_3d(
         with_layout_postprocess=with_layout_postprocess
     )
 
-    return {"job_id": job_id}
+    return {"jobId": job_id}  # Use camelCase for frontend compatibility
 
 
 async def process_generation(
@@ -343,7 +346,7 @@ async def process_generation(
 
         # Save outputs
         result = {
-            "job_id": job_id,
+            "jobId": job_id,  # Use camelCase for frontend
             "files": {}
         }
 

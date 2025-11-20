@@ -88,9 +88,9 @@ function App() {
 
       try {
         const response = await api.generate3D(imageData.imageId, options);
-        setJobId(response.job_id);
+        setJobId(response.jobId);
         setJobStatus({
-          jobId: response.job_id,
+          jobId: response.jobId,
           status: 'pending',
           progress: 0,
           message: 'Job created',
