@@ -1,7 +1,10 @@
 import axios from 'axios';
 import { ImageData, MaskData, GenerationOptions, JobStatus } from '../types';
 
-const API_BASE_URL = '/api';
+// Use environment variable for API URL, fallback to relative path for proxy
+const API_BASE_URL = import.meta.env.VITE_API_URL
+  ? `${import.meta.env.VITE_API_URL}/api`
+  : '/api';
 
 export const api = {
   // Upload image
