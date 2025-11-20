@@ -368,8 +368,18 @@ async def process_generation(
 
         # Convert to numpy arrays (inference expects numpy, not PIL)
         image_np = np.array(combined_image)
-        mask_np = np.array(mask)
-        print(f"[DEBUG] Converted to numpy: image shape={image_np.shape}, mask shape={mask_np.shape}")
+
+        # Extract mask from alpha channel of RGBA image (like demo.py does)
+        # This is the correct format: mask is derived from alpha channel
+        if image_np.shape[2] == 4:  # RGBA
+            mask_np = image_np[:, :, 3]  # Extract alpha channel
+            print(f"[DEBUG] Extracted mask from alpha channel")
+        else:
+            # Fallback: use separate mask file
+            mask_np = np.array(mask)
+            print(f"[DEBUG] Using separate mask file (fallback)")
+
+        print(f"[DEBUG] Image shape={image_np.shape}, Mask shape={mask_np.shape}")
         print(f"[DEBUG] Image dtype={image_np.dtype}, min={image_np.min()}, max={image_np.max()}")
         print(f"[DEBUG] Mask dtype={mask_np.dtype}, min={mask_np.min()}, max={mask_np.max()}")
         print(f"[DEBUG] Mask unique values: {np.unique(mask_np)}")
