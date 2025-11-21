@@ -8,6 +8,7 @@ import sys
 import asyncio
 import uuid
 import shutil
+import argparse
 from pathlib import Path
 from typing import Optional, Dict, Any
 from datetime import datetime
@@ -512,4 +513,40 @@ async def cleanup_job(job_id: str):
 
 if __name__ == "__main__":
     import uvicorn
-    uvicorn.run(app, host="0.0.0.0", port=8000)
+
+    # Parse command line arguments
+    parser = argparse.ArgumentParser(description='SAM 3D Objects Backend Server')
+    parser.add_argument(
+        '--port', '-p',
+        type=int,
+        default=8000,
+        help='Port to run the server on (default: 8000)'
+    )
+    parser.add_argument(
+        '--host',
+        type=str,
+        default='0.0.0.0',
+        help='Host to bind to (default: 0.0.0.0 for all interfaces)'
+    )
+    parser.add_argument(
+        '--reload',
+        action='store_true',
+        help='Enable auto-reload on code changes (development mode)'
+    )
+
+    args = parser.parse_args()
+
+    print(f"Starting SAM 3D Objects Backend Server")
+    print(f"Host: {args.host}")
+    print(f"Port: {args.port}")
+    print(f"API URL: http://{args.host if args.host != '0.0.0.0' else 'localhost'}:{args.port}")
+    print(f"API Docs: http://{args.host if args.host != '0.0.0.0' else 'localhost'}:{args.port}/docs")
+    print(f"Reload: {args.reload}")
+    print("-" * 60)
+
+    uvicorn.run(
+        app,
+        host=args.host,
+        port=args.port,
+        reload=args.reload
+    )

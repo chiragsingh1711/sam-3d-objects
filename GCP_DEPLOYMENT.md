@@ -91,14 +91,24 @@ Replace `YOUR_GCP_EXTERNAL_IP` with your actual GCP external IP address.
 cd backend
 pip install -r requirements.txt
 
-# Run with uvicorn (allows external access)
+# Basic usage (default: host=0.0.0.0, port=8000)
+python main.py
+
+# Or specify custom port
+python main.py --port 8080
+
+# Or run directly with uvicorn
 uvicorn main:app --host 0.0.0.0 --port 8000
 ```
 
-Or use the Python script directly (already configured for 0.0.0.0):
+**Command Line Options:**
+- `--port`, `-p`: Port to run the server on (default: 8000)
+- `--host`: Host to bind to (default: 0.0.0.0)
+- `--reload`: Enable auto-reload for development
 
+Example with custom settings:
 ```bash
-python main.py
+python main.py --port 9000 --reload
 ```
 
 ### 5. Start Frontend Server

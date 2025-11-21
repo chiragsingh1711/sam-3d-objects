@@ -166,10 +166,29 @@ Then start the FastAPI server:
 # Make sure you have the model checkpoints downloaded first
 # See doc/setup.md for checkpoint download instructions
 
+# Basic usage (default port 8000)
 python backend/main.py
+
+# Or specify a custom port
+python backend/main.py --port 8080
+
+# Or use short form
+python backend/main.py -p 9000
+
+# Enable auto-reload for development
+python backend/main.py --reload
+
+# Combine options
+python backend/main.py --port 8080 --host 0.0.0.0 --reload
 ```
 
-The backend API will be available at `http://localhost:8000`
+**Command Line Options:**
+- `--port`, `-p`: Port to run the server on (default: 8000)
+- `--host`: Host to bind to (default: 0.0.0.0 for all interfaces)
+- `--reload`: Enable auto-reload on code changes (development mode)
+- `--help`, `-h`: Show help message
+
+The backend API will be available at `http://localhost:<port>` (default: `http://localhost:8000`)
 
 #### 2. Start the Frontend Development Server
 
