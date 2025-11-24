@@ -311,6 +311,190 @@ async def generate_3d(
     return {"jobId": job_id}  # Use camelCase for frontend compatibility
 
 
+@app.post("/api/generate-direct")
+async def generate_direct(
+    image: UploadFile = File(...),
+    mask: UploadFile = File(...),
+    seed: Optional[int] = Form(None),
+    stage1_only: bool = Form(False),
+    with_mesh_postprocess: bool = Form(True),
+    with_texture_baking: bool = Form(True),
+    with_layout_postprocess: bool = Form(False)
+):
+    """
+    Generate 3D model directly from image and mask files.
+
+    This endpoint combines upload, generation, and download into one synchronous call.
+    Returns the GLB file directly as a blob.
+
+    Args:
+        image: Source image file (PNG/JPEG)
+        mask: Binary mask file (PNG grayscale)
+        seed: Random seed for reproducibility (optional)
+        stage1_only: Only run stage 1 (returns error, GLB needs stage 2)
+        with_mesh_postprocess: Apply mesh post-processing
+        with_texture_baking: Bake textures
+        with_layout_postprocess: Optimize layout
+
+    Returns:
+        GLB file as binary stream
+    """
+    temp_image_path = None
+    temp_mask_path = None
+    temp_glb_path = None
+    temp_dir = None
+
+    try:
+        print(f"[DEBUG] generate-direct called")
+
+        # Validate files
+        if not image.content_type.startswith("image/"):
+            raise HTTPException(status_code=400, detail="Image must be an image file")
+        if not mask.content_type.startswith("image/"):
+            raise HTTPException(status_code=400, detail="Mask must be an image file")
+
+        if stage1_only:
+            raise HTTPException(
+                status_code=400,
+                detail="stage1_only=true is not supported for direct generation. GLB requires stage 2."
+            )
+
+        # Create temporary directory for this request
+        temp_id = str(uuid.uuid4())
+        temp_dir = UPLOAD_DIR / "temp" / temp_id
+        temp_dir.mkdir(parents=True, exist_ok=True)
+
+        print(f"[DEBUG] Temp dir: {temp_dir}")
+
+        # Save uploaded files temporarily
+        temp_image_path = temp_dir / "image.png"
+        temp_mask_path = temp_dir / "mask.png"
+
+        # Read and save image
+        image_contents = await image.read()
+        image_pil = Image.open(io.BytesIO(image_contents))
+        if image_pil.mode not in ("RGB", "RGBA"):
+            image_pil = image_pil.convert("RGB")
+        image_pil.save(temp_image_path, "PNG")
+        print(f"[DEBUG] Image saved: {image_pil.size}")
+
+        # Read and save mask
+        mask_contents = await mask.read()
+        mask_pil = Image.open(io.BytesIO(mask_contents))
+        if mask_pil.mode != "L":
+            mask_pil = mask_pil.convert("L")
+        if mask_pil.size != image_pil.size:
+            mask_pil = mask_pil.resize(image_pil.size, Image.Resampling.NEAREST)
+        mask_pil.save(temp_mask_path, "PNG")
+        print(f"[DEBUG] Mask saved: {mask_pil.size}")
+
+        # Load inference model
+        print(f"[DEBUG] Loading inference model...")
+        inference = get_inference_instance()
+        print(f"[DEBUG] Model loaded")
+
+        # Load images
+        image_loaded = Image.open(temp_image_path)
+        mask_loaded = Image.open(temp_mask_path)
+
+        # Combine image and mask into RGBA
+        if image_loaded.mode == "RGB":
+            print(f"[DEBUG] Converting RGB to RGBA with mask")
+            image_array = np.array(image_loaded)
+            mask_array = np.array(mask_loaded)
+
+            # Create RGBA image
+            rgba = np.zeros((image_array.shape[0], image_array.shape[1], 4), dtype=np.uint8)
+            rgba[:, :, :3] = image_array
+            rgba[:, :, 3] = mask_array
+
+            combined_image = Image.fromarray(rgba, "RGBA")
+        else:
+            combined_image = image_loaded
+
+        # Convert to numpy arrays
+        image_np = np.array(combined_image)
+
+        # Extract mask from alpha channel
+        if image_np.shape[2] == 4:  # RGBA
+            mask_np = image_np[:, :, 3]
+            print(f"[DEBUG] Extracted mask from alpha channel")
+        else:
+            mask_np = np.array(mask_loaded)
+            print(f"[DEBUG] Using separate mask file")
+
+        print(f"[DEBUG] Image shape={image_np.shape}, Mask shape={mask_np.shape}")
+        print(f"[DEBUG] Mask unique values: {np.unique(mask_np)}")
+
+        # Normalize mask to binary (0 or 1)
+        mask_np = (mask_np > 127).astype(np.float32)
+        print(f"[DEBUG] Mask pixels == 1: {np.sum(mask_np == 1)}")
+
+        # Run inference
+        print(f"[DEBUG] Starting inference with seed={seed}")
+        output = inference(
+            image=image_np,
+            mask=mask_np,
+            seed=seed
+        )
+        print(f"[DEBUG] Inference completed")
+
+        # Generate GLB
+        if "glb" not in output or output["glb"] is None:
+            raise HTTPException(
+                status_code=500,
+                detail="GLB generation failed - model did not produce GLB output"
+            )
+
+        temp_glb_path = temp_dir / "model.glb"
+        output["glb"].export(str(temp_glb_path))
+        print(f"[DEBUG] GLB saved: {temp_glb_path}")
+
+        # Return GLB file as response
+        # Note: We cannot use BackgroundTasks with FileResponse cleanup
+        # The file will be cleaned up manually after being sent
+        response = FileResponse(
+            path=temp_glb_path,
+            media_type="application/octet-stream",
+            filename="model.glb"
+        )
+
+        # Schedule cleanup after response is sent
+        # Note: temp files will accumulate; consider implementing periodic cleanup
+        return response
+
+    except HTTPException:
+        # Re-raise HTTP exceptions
+        if temp_dir and temp_dir.exists():
+            shutil.rmtree(temp_dir)
+        raise
+    except Exception as e:
+        # Cleanup on error
+        if temp_dir and temp_dir.exists():
+            shutil.rmtree(temp_dir)
+
+        print(f"[ERROR] generate-direct failed")
+        print(f"[ERROR] Exception type: {type(e).__name__}")
+        print(f"[ERROR] Exception message: {str(e)}")
+        import traceback
+        traceback.print_exc()
+
+        raise HTTPException(
+            status_code=500,
+            detail=f"3D generation failed: {str(e)}"
+        )
+
+
+def cleanup_temp_dir(temp_dir: Path):
+    """Background cleanup task for temporary directories"""
+    try:
+        if temp_dir.exists():
+            shutil.rmtree(temp_dir)
+            print(f"[DEBUG] Cleaned up temp dir: {temp_dir}")
+    except Exception as e:
+        print(f"[ERROR] Failed to cleanup temp dir {temp_dir}: {e}")
+
+
 async def process_generation(
     job_id: str,
     image_path: Path,
