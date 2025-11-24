@@ -510,50 +510,30 @@ async def generate_direct(
             print(f"[DEBUG] Mask {idx} saved: {mask_pil.size}")
 
             # Load images
-            image_loaded = Image.open(temp_image_path)
-            mask_loaded = Image.open(temp_mask_path)
+            image_loaded = Image.open(temp_image_path).convert("RGB")  # Ensure RGB
+            mask_loaded = Image.open(temp_mask_path).convert("L")      # Ensure grayscale
 
-            # Combine image and mask into RGBA
-            if image_loaded.mode == "RGB":
-                print(f"[DEBUG] Converting RGB to RGBA with mask {idx}")
-                image_array = np.array(image_loaded)
-                mask_array = np.array(mask_loaded)
+            # Convert to numpy arrays - let the Inference class handle RGBA merging
+            image_np = np.array(image_loaded)  # RGB: shape (H, W, 3)
+            mask_np = np.array(mask_loaded)    # Grayscale: shape (H, W)
 
-                # Create RGBA image
-                rgba = np.zeros((image_array.shape[0], image_array.shape[1], 4), dtype=np.uint8)
-                rgba[:, :, :3] = image_array
-                rgba[:, :, 3] = mask_array
+            print(f"[DEBUG] Image {idx}: shape={image_np.shape}, dtype={image_np.dtype}")
+            print(f"[DEBUG] Mask {idx}: shape={mask_np.shape}, dtype={mask_np.dtype}, unique values={np.unique(mask_np)}")
 
-                combined_image = Image.fromarray(rgba, "RGBA")
-            else:
-                combined_image = image_loaded
+            # Check if mask has valid pixels
+            mask_pixels = np.sum(mask_np > 127)
+            print(f"[DEBUG] Mask {idx}: pixels > 127: {mask_pixels}")
 
-            # Convert to numpy arrays
-            image_np = np.array(combined_image)
-
-            # Extract mask from alpha channel
-            if image_np.shape[2] == 4:  # RGBA
-                mask_np = image_np[:, :, 3]
-                print(f"[DEBUG] Extracted mask {idx} from alpha channel")
-            else:
-                mask_np = np.array(mask_loaded)
-                print(f"[DEBUG] Using separate mask file {idx}")
-
-            print(f"[DEBUG] Mask {idx}: shape={mask_np.shape}, unique values={np.unique(mask_np)}")
-
-            # Normalize mask to binary (0 or 1)
-            mask_np = (mask_np > 127).astype(np.float32)
-            print(f"[DEBUG] Mask {idx}: pixels == 1: {np.sum(mask_np == 1)}")
-
-            if np.sum(mask_np == 1) == 0:
-                print(f"[WARNING] Mask {idx} has no valid pixels, skipping")
+            if mask_pixels == 0:
+                print(f"[WARNING] Mask {idx} has no valid pixels (all black), skipping")
                 continue
 
-            # Run inference
+            # Run inference - pass RGB image and grayscale mask separately
+            # The Inference class will handle RGBA merging internally
             print(f"[DEBUG] Starting inference for mask {idx} with seed={seed}")
             output = inference(
-                image=image_np,
-                mask=mask_np,
+                image=image_np,  # RGB numpy array (H, W, 3)
+                mask=mask_np,    # Grayscale numpy array (H, W)
                 seed=seed
             )
             print(f"[DEBUG] Inference completed for mask {idx}")
