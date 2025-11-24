@@ -103,10 +103,11 @@ When a single mask is provided, the response is a binary stream containing the g
 **ZIP Contents Structure:**
 ```
 scene.zip
-├── object_0.glb          # 3D model for first mask
-├── object_1.glb          # 3D model for second mask
-├── object_N.glb          # 3D model for Nth mask
-└── scene.json            # Scene metadata with transformations
+├── object_0.glb             # 3D model for first mask
+├── object_1.glb             # 3D model for second mask
+├── object_N.glb             # 3D model for Nth mask
+├── scene.json               # Scene metadata with Blender-compatible transformations
+└── import_to_blender.py     # Ready-to-use Blender import script
 ```
 
 **scene.json Format:**
@@ -122,28 +123,31 @@ scene.zip
       "object_id": 0,
       "filename": "object_0.glb",
       "mask_filename": "mask_chair.png",
-      "translation": [0.1, 0.0, -0.5],
-      "rotation": [0.0, 0.0, 0.0, 1.0],
-      "scale": [1.0, 1.0, 1.0]
+      "blender_location": [0.1, 0.0, -0.5],
+      "blender_rotation_quaternion": [1.0, 0.0, 0.0, 0.0],
+      "blender_rotation_euler": [0.0, 0.0, 0.0],
+      "blender_scale": [1.0, 1.0, 1.0]
     },
     {
       "object_id": 1,
       "filename": "object_1.glb",
       "mask_filename": "mask_table.png",
-      "translation": [-0.3, 0.2, 0.1],
-      "rotation": [0.0, 0.0, 0.0, 1.0],
-      "scale": [1.2, 1.2, 1.2]
+      "blender_location": [-0.3, 0.2, 0.1],
+      "blender_rotation_quaternion": [1.0, 0.0, 0.0, 0.0],
+      "blender_rotation_euler": [0.0, 0.0, 0.0],
+      "blender_scale": [1.2, 1.2, 1.2]
     }
   ]
 }
 ```
 
-**Metadata Fields:**
-- `translation`: [x, y, z] - 3D position offset
-- `rotation`: [x, y, z, w] - Quaternion rotation
-- `scale`: [x, y, z] - Scale factors
+**Metadata Fields (Blender-Optimized):**
+- `blender_location`: [x, y, z] - 3D position in Blender coordinate system
+- `blender_rotation_quaternion`: [w, x, y, z] - Quaternion rotation (**w first**, Blender format)
+- `blender_rotation_euler`: [x, y, z] - Euler angles in **radians** (XYZ order) - easier for manual editing
+- `blender_scale`: [x, y, z] - Scale factors
 
-These transformation matrices encode each object's position/orientation in the scene, allowing you to reconstruct the correct spatial layout in your 3D viewer.
+These transformation values are **ready to use directly in Blender** without any conversion.
 
 **Usage:**
 The GLB files and metadata can be:
@@ -374,9 +378,9 @@ with open('room.png', 'rb') as img:
                 filename = obj['filename']
                 z.extract(filename, 'output/')
                 print(f"Extracted {filename}")
-                print(f"  Position: {obj.get('translation', 'N/A')}")
-                print(f"  Rotation: {obj.get('rotation', 'N/A')}")
-                print(f"  Scale: {obj.get('scale', 'N/A')}")
+                print(f"  Location: {obj.get('blender_location', 'N/A')}")
+                print(f"  Rotation (Euler): {obj.get('blender_rotation_euler', 'N/A')}")
+                print(f"  Scale: {obj.get('blender_scale', 'N/A')}")
     else:
         print('Error:', response.json())
 ```
@@ -410,24 +414,85 @@ for (const obj of sceneData.objects) {
     const model = gltf.scene;
 
     // Apply transformations from metadata
-    if (obj.translation) {
-      model.position.set(...obj.translation);
+    // Note: Blender format [w,x,y,z], Three.js uses [x,y,z,w]
+    if (obj.blender_location) {
+      model.position.set(...obj.blender_location);
     }
-    if (obj.rotation) {
-      const [x, y, z, w] = obj.rotation;
-      model.quaternion.set(x, y, z, w);
+    if (obj.blender_rotation_quaternion) {
+      const [w, x, y, z] = obj.blender_rotation_quaternion;  // Blender format
+      model.quaternion.set(x, y, z, w);  // Three.js format
     }
-    if (obj.scale) {
-      model.scale.set(...obj.scale);
+    if (obj.blender_scale) {
+      model.scale.set(...obj.blender_scale);
     }
 
     scene.add(model);
-    console.log(`Loaded ${obj.filename} at position`, obj.translation);
+    console.log(`Loaded ${obj.filename} at position`, obj.blender_location);
   });
 
   URL.revokeObjectURL(glbUrl);
 }
 ```
+
+### Blender Import (Automatic)
+
+The ZIP file includes a ready-to-use Python script (`import_to_blender.py`) that automatically imports all GLB files with correct transformations.
+
+**Steps:**
+
+1. **Extract the ZIP file** to a folder (e.g., `C:/projects/my_scene/`)
+
+2. **Open Blender** (tested with Blender 3.0+)
+
+3. **Go to Scripting workspace** (top menu bar)
+
+4. **Open the import script:**
+   - Click "Open" in the text editor
+   - Navigate to your extracted folder
+   - Select `import_to_blender.py`
+
+5. **Update the folder path:**
+   ```python
+   # At the top of the script, update this line:
+   SCENE_FOLDER = r"C:/projects/my_scene"  # Your extracted folder path
+   ```
+
+6. **Run the script:**
+   - Press `Alt+P` or click "Run Script" button
+   - Watch the console for import progress
+
+7. **Done!** All objects are now imported with correct spatial layout
+
+**Script Features:**
+- Automatically reads `scene.json` metadata
+- Imports all GLB files from the folder
+- Applies location, rotation (Euler or Quaternion), and scale
+- Renames objects for clarity (e.g., `SAM3D_mask_chair`)
+- Prints detailed import log to console
+
+**Manual Import (Alternative):**
+
+If you prefer manual control, you can import GLB files individually:
+
+```python
+import bpy
+from mathutils import Vector, Euler
+
+# Import GLB
+bpy.ops.import_scene.gltf(filepath="/path/to/object_0.glb")
+obj = bpy.context.selected_objects[0]
+
+# Apply transformations from scene.json manually:
+obj.location = Vector([0.1, 0.0, -0.5])             # blender_location
+obj.rotation_mode = 'XYZ'
+obj.rotation_euler = Euler([0.0, 0.0, 0.0], 'XYZ')  # blender_rotation_euler (radians)
+obj.scale = Vector([1.0, 1.0, 1.0])                 # blender_scale
+```
+
+**Coordinate System:**
+- The transformation data is already in Blender's coordinate system (Z-up, right-handed)
+- No axis conversion needed
+- Rotations are provided in both Quaternion and Euler formats for flexibility
 
 ## Processing Time
 
