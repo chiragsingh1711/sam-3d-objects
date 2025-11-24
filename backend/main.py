@@ -313,6 +313,108 @@ async def generate_3d(
     return {"jobId": job_id}  # Use camelCase for frontend compatibility
 
 
+def generate_blender_import_script(scene_metadata: Dict[str, Any]) -> str:
+    """
+    Generate a Blender Python script to import all GLB files with correct transformations.
+    This script can be run directly in Blender's scripting workspace.
+    """
+    script = '''# Blender Import Script for SAM 3D Objects
+# Instructions:
+# 1. Extract the ZIP file to a folder
+# 2. Open Blender
+# 3. Go to Scripting workspace
+# 4. Open this script file or paste the contents
+# 5. Update the SCENE_FOLDER path below to point to your extracted folder
+# 6. Run the script (Alt+P or click "Run Script")
+
+import bpy
+import os
+import json
+from mathutils import Vector, Quaternion, Euler
+from math import radians
+
+# === CONFIGURATION ===
+# Update this path to point to your extracted scene folder
+SCENE_FOLDER = r"C:/path/to/extracted/scene"  # Windows example
+# SCENE_FOLDER = "/path/to/extracted/scene"  # Linux/Mac example
+
+# === SCRIPT ===
+def import_scene():
+    """Import all GLB files with correct transformations"""
+
+    # Load scene metadata
+    metadata_path = os.path.join(SCENE_FOLDER, "scene.json")
+
+    if not os.path.exists(metadata_path):
+        print(f"ERROR: scene.json not found at {metadata_path}")
+        print(f"Please update SCENE_FOLDER path in the script")
+        return
+
+    with open(metadata_path, 'r') as f:
+        scene_data = json.load(f)
+
+    print(f"Importing {scene_data['num_objects']} objects...")
+
+    # Import each object
+    for obj_data in scene_data['objects']:
+        filename = obj_data['filename']
+        glb_path = os.path.join(SCENE_FOLDER, filename)
+
+        if not os.path.exists(glb_path):
+            print(f"WARNING: {filename} not found, skipping")
+            continue
+
+        # Import GLB file
+        bpy.ops.import_scene.gltf(filepath=glb_path)
+
+        # Get the imported object (last selected)
+        imported_obj = bpy.context.selected_objects[0] if bpy.context.selected_objects else None
+
+        if imported_obj:
+            # Apply transformations from metadata
+
+            # Location
+            if 'blender_location' in obj_data:
+                loc = obj_data['blender_location']
+                imported_obj.location = Vector(loc)
+                print(f"  Location: {loc}")
+
+            # Rotation (prefer Euler, fallback to Quaternion)
+            if 'blender_rotation_euler' in obj_data:
+                euler = obj_data['blender_rotation_euler']  # Already in radians
+                imported_obj.rotation_mode = 'XYZ'
+                imported_obj.rotation_euler = Euler(euler, 'XYZ')
+                print(f"  Rotation (Euler XYZ): {euler}")
+            elif 'blender_rotation_quaternion' in obj_data:
+                quat = obj_data['blender_rotation_quaternion']  # [w, x, y, z]
+                imported_obj.rotation_mode = 'QUATERNION'
+                imported_obj.rotation_quaternion = Quaternion(quat)
+                print(f"  Rotation (Quaternion): {quat}")
+
+            # Scale
+            if 'blender_scale' in obj_data:
+                scale = obj_data['blender_scale']
+                imported_obj.scale = Vector(scale)
+                print(f"  Scale: {scale}")
+
+            # Rename object for clarity
+            mask_name = obj_data.get('mask_filename', f"object_{obj_data['object_id']}")
+            imported_obj.name = f"SAM3D_{mask_name.replace('.png', '')}"
+
+            print(f"✓ Imported {filename} as {imported_obj.name}")
+        else:
+            print(f"WARNING: Could not find imported object for {filename}")
+
+    print(f"\\nImport complete! Imported {scene_data['num_objects']} objects.")
+    print(f"All objects are positioned according to their spatial layout in the original image.")
+
+# Run the import
+if __name__ == "__main__":
+    import_scene()
+'''
+    return script
+
+
 @app.post("/api/generate-direct")
 async def generate_direct(
     image: UploadFile = File(...),
@@ -474,23 +576,63 @@ async def generate_direct(
             }
 
             # Add transformation data if available in output
+            # Format optimized for Blender import
             if "translation" in output:
                 translation = output["translation"]
                 if hasattr(translation, "cpu"):
                     translation = translation.cpu().numpy()
-                metadata["translation"] = translation.tolist()
+                translation_list = translation.tolist()
+
+                # Blender uses Z-up coordinate system
+                # Store in Blender-compatible format
+                metadata["blender_location"] = translation_list  # [x, y, z]
 
             if "rotation" in output:
                 rotation = output["rotation"]
                 if hasattr(rotation, "cpu"):
                     rotation = rotation.cpu().numpy()
-                metadata["rotation"] = rotation.tolist()
+                rotation_list = rotation.tolist()
+
+                # Blender quaternion format: [w, x, y, z] (w first)
+                # Input might be [x, y, z, w] - need to check and convert
+                if len(rotation_list) == 4:
+                    # Assume input is [x, y, z, w], convert to Blender format [w, x, y, z]
+                    x, y, z, w = rotation_list
+                    metadata["blender_rotation_quaternion"] = [w, x, y, z]
+
+                    # Also convert to Euler angles (XYZ) for easier manual editing in Blender
+                    # Using quaternion to euler conversion
+                    import math
+
+                    # Quaternion to Euler (XYZ order) - Blender default
+                    # From: https://en.wikipedia.org/wiki/Conversion_between_quaternions_and_Euler_angles
+
+                    # Roll (x-axis rotation)
+                    sinr_cosp = 2 * (w * x + y * z)
+                    cosr_cosp = 1 - 2 * (x * x + y * y)
+                    roll = math.atan2(sinr_cosp, cosr_cosp)
+
+                    # Pitch (y-axis rotation)
+                    sinp = 2 * (w * y - z * x)
+                    if abs(sinp) >= 1:
+                        pitch = math.copysign(math.pi / 2, sinp)
+                    else:
+                        pitch = math.asin(sinp)
+
+                    # Yaw (z-axis rotation)
+                    siny_cosp = 2 * (w * z + x * y)
+                    cosy_cosp = 1 - 2 * (y * y + z * z)
+                    yaw = math.atan2(siny_cosp, cosy_cosp)
+
+                    # Blender uses radians for rotation
+                    metadata["blender_rotation_euler"] = [roll, pitch, yaw]  # radians, XYZ order
 
             if "scale" in output:
                 scale = output["scale"]
                 if hasattr(scale, "cpu"):
                     scale = scale.cpu().numpy()
-                metadata["scale"] = scale.tolist()
+                scale_list = scale.tolist()
+                metadata["blender_scale"] = scale_list  # [x, y, z]
 
             outputs.append({
                 "glb_path": temp_glb_path,
@@ -526,6 +668,10 @@ async def generate_direct(
             # Add scene metadata JSON
             metadata_json = json.dumps(scene_metadata, indent=2)
             zipf.writestr("scene.json", metadata_json)
+
+            # Generate Blender Python import script
+            blender_script = generate_blender_import_script(scene_metadata)
+            zipf.writestr("import_to_blender.py", blender_script)
 
         print(f"[DEBUG] ZIP file created: {zip_path}")
 
