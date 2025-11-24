@@ -9,8 +9,10 @@ import asyncio
 import uuid
 import shutil
 import argparse
+import json
+import zipfile
 from pathlib import Path
-from typing import Optional, Dict, Any
+from typing import Optional, Dict, Any, List
 from datetime import datetime
 
 from fastapi import FastAPI, File, UploadFile, HTTPException, BackgroundTasks, Form
@@ -314,7 +316,7 @@ async def generate_3d(
 @app.post("/api/generate-direct")
 async def generate_direct(
     image: UploadFile = File(...),
-    mask: UploadFile = File(...),
+    masks: List[UploadFile] = File(...),
     seed: Optional[int] = Form(None),
     stage1_only: bool = Form(False),
     with_mesh_postprocess: bool = Form(True),
@@ -322,14 +324,14 @@ async def generate_direct(
     with_layout_postprocess: bool = Form(False)
 ):
     """
-    Generate 3D model directly from image and mask files.
+    Generate 3D models directly from image and multiple mask files.
 
-    This endpoint combines upload, generation, and download into one synchronous call.
-    Returns the GLB file directly as a blob.
+    This endpoint supports multi-object 3D generation. Upload one image and multiple masks
+    (one per object). Returns a ZIP file containing multiple GLB files with correct spatial layout.
 
     Args:
         image: Source image file (PNG/JPEG)
-        mask: Binary mask file (PNG grayscale)
+        masks: List of binary mask files (PNG grayscale), one per object
         seed: Random seed for reproducibility (optional)
         stage1_only: Only run stage 1 (returns error, GLB needs stage 2)
         with_mesh_postprocess: Apply mesh post-processing
@@ -337,21 +339,24 @@ async def generate_direct(
         with_layout_postprocess: Optimize layout
 
     Returns:
-        GLB file as binary stream
+        If single mask: GLB file as binary stream
+        If multiple masks: ZIP file containing multiple GLBs + scene.json metadata
     """
-    temp_image_path = None
-    temp_mask_path = None
-    temp_glb_path = None
     temp_dir = None
 
     try:
-        print(f"[DEBUG] generate-direct called")
+        print(f"[DEBUG] generate-direct called with {len(masks)} mask(s)")
 
         # Validate files
         if not image.content_type.startswith("image/"):
             raise HTTPException(status_code=400, detail="Image must be an image file")
-        if not mask.content_type.startswith("image/"):
-            raise HTTPException(status_code=400, detail="Mask must be an image file")
+
+        for idx, mask in enumerate(masks):
+            if not mask.content_type.startswith("image/"):
+                raise HTTPException(status_code=400, detail=f"Mask {idx} must be an image file")
+
+        if len(masks) == 0:
+            raise HTTPException(status_code=400, detail="At least one mask is required")
 
         if stage1_only:
             raise HTTPException(
@@ -366,11 +371,8 @@ async def generate_direct(
 
         print(f"[DEBUG] Temp dir: {temp_dir}")
 
-        # Save uploaded files temporarily
+        # Save uploaded image
         temp_image_path = temp_dir / "image.png"
-        temp_mask_path = temp_dir / "mask.png"
-
-        # Read and save image
         image_contents = await image.read()
         image_pil = Image.open(io.BytesIO(image_contents))
         if image_pil.mode not in ("RGB", "RGBA"):
@@ -378,90 +380,161 @@ async def generate_direct(
         image_pil.save(temp_image_path, "PNG")
         print(f"[DEBUG] Image saved: {image_pil.size}")
 
-        # Read and save mask
-        mask_contents = await mask.read()
-        mask_pil = Image.open(io.BytesIO(mask_contents))
-        if mask_pil.mode != "L":
-            mask_pil = mask_pil.convert("L")
-        if mask_pil.size != image_pil.size:
-            mask_pil = mask_pil.resize(image_pil.size, Image.Resampling.NEAREST)
-        mask_pil.save(temp_mask_path, "PNG")
-        print(f"[DEBUG] Mask saved: {mask_pil.size}")
-
-        # Load inference model
+        # Load inference model once
         print(f"[DEBUG] Loading inference model...")
         inference = get_inference_instance()
         print(f"[DEBUG] Model loaded")
 
-        # Load images
-        image_loaded = Image.open(temp_image_path)
-        mask_loaded = Image.open(temp_mask_path)
+        # Process each mask and run inference
+        outputs = []
+        scene_metadata = {
+            "image_size": {"width": image_pil.size[0], "height": image_pil.size[1]},
+            "num_objects": len(masks),
+            "objects": []
+        }
 
-        # Combine image and mask into RGBA
-        if image_loaded.mode == "RGB":
-            print(f"[DEBUG] Converting RGB to RGBA with mask")
-            image_array = np.array(image_loaded)
-            mask_array = np.array(mask_loaded)
+        for idx, mask_file in enumerate(masks):
+            print(f"[DEBUG] Processing mask {idx + 1}/{len(masks)}")
 
-            # Create RGBA image
-            rgba = np.zeros((image_array.shape[0], image_array.shape[1], 4), dtype=np.uint8)
-            rgba[:, :, :3] = image_array
-            rgba[:, :, 3] = mask_array
+            # Save mask
+            temp_mask_path = temp_dir / f"mask_{idx}.png"
+            mask_contents = await mask_file.read()
+            mask_pil = Image.open(io.BytesIO(mask_contents))
+            if mask_pil.mode != "L":
+                mask_pil = mask_pil.convert("L")
+            if mask_pil.size != image_pil.size:
+                mask_pil = mask_pil.resize(image_pil.size, Image.Resampling.NEAREST)
+            mask_pil.save(temp_mask_path, "PNG")
+            print(f"[DEBUG] Mask {idx} saved: {mask_pil.size}")
 
-            combined_image = Image.fromarray(rgba, "RGBA")
-        else:
-            combined_image = image_loaded
+            # Load images
+            image_loaded = Image.open(temp_image_path)
+            mask_loaded = Image.open(temp_mask_path)
 
-        # Convert to numpy arrays
-        image_np = np.array(combined_image)
+            # Combine image and mask into RGBA
+            if image_loaded.mode == "RGB":
+                print(f"[DEBUG] Converting RGB to RGBA with mask {idx}")
+                image_array = np.array(image_loaded)
+                mask_array = np.array(mask_loaded)
 
-        # Extract mask from alpha channel
-        if image_np.shape[2] == 4:  # RGBA
-            mask_np = image_np[:, :, 3]
-            print(f"[DEBUG] Extracted mask from alpha channel")
-        else:
-            mask_np = np.array(mask_loaded)
-            print(f"[DEBUG] Using separate mask file")
+                # Create RGBA image
+                rgba = np.zeros((image_array.shape[0], image_array.shape[1], 4), dtype=np.uint8)
+                rgba[:, :, :3] = image_array
+                rgba[:, :, 3] = mask_array
 
-        print(f"[DEBUG] Image shape={image_np.shape}, Mask shape={mask_np.shape}")
-        print(f"[DEBUG] Mask unique values: {np.unique(mask_np)}")
+                combined_image = Image.fromarray(rgba, "RGBA")
+            else:
+                combined_image = image_loaded
 
-        # Normalize mask to binary (0 or 1)
-        mask_np = (mask_np > 127).astype(np.float32)
-        print(f"[DEBUG] Mask pixels == 1: {np.sum(mask_np == 1)}")
+            # Convert to numpy arrays
+            image_np = np.array(combined_image)
 
-        # Run inference
-        print(f"[DEBUG] Starting inference with seed={seed}")
-        output = inference(
-            image=image_np,
-            mask=mask_np,
-            seed=seed
-        )
-        print(f"[DEBUG] Inference completed")
+            # Extract mask from alpha channel
+            if image_np.shape[2] == 4:  # RGBA
+                mask_np = image_np[:, :, 3]
+                print(f"[DEBUG] Extracted mask {idx} from alpha channel")
+            else:
+                mask_np = np.array(mask_loaded)
+                print(f"[DEBUG] Using separate mask file {idx}")
 
-        # Generate GLB
-        if "glb" not in output or output["glb"] is None:
+            print(f"[DEBUG] Mask {idx}: shape={mask_np.shape}, unique values={np.unique(mask_np)}")
+
+            # Normalize mask to binary (0 or 1)
+            mask_np = (mask_np > 127).astype(np.float32)
+            print(f"[DEBUG] Mask {idx}: pixels == 1: {np.sum(mask_np == 1)}")
+
+            if np.sum(mask_np == 1) == 0:
+                print(f"[WARNING] Mask {idx} has no valid pixels, skipping")
+                continue
+
+            # Run inference
+            print(f"[DEBUG] Starting inference for mask {idx} with seed={seed}")
+            output = inference(
+                image=image_np,
+                mask=mask_np,
+                seed=seed
+            )
+            print(f"[DEBUG] Inference completed for mask {idx}")
+
+            # Check GLB generation
+            if "glb" not in output or output["glb"] is None:
+                print(f"[WARNING] GLB generation failed for mask {idx}, skipping")
+                continue
+
+            # Save GLB
+            temp_glb_path = temp_dir / f"object_{idx}.glb"
+            output["glb"].export(str(temp_glb_path))
+            print(f"[DEBUG] GLB {idx} saved: {temp_glb_path}")
+
+            # Extract transformation metadata if available
+            metadata = {
+                "object_id": idx,
+                "filename": f"object_{idx}.glb",
+                "mask_filename": mask_file.filename
+            }
+
+            # Add transformation data if available in output
+            if "translation" in output:
+                translation = output["translation"]
+                if hasattr(translation, "cpu"):
+                    translation = translation.cpu().numpy()
+                metadata["translation"] = translation.tolist()
+
+            if "rotation" in output:
+                rotation = output["rotation"]
+                if hasattr(rotation, "cpu"):
+                    rotation = rotation.cpu().numpy()
+                metadata["rotation"] = rotation.tolist()
+
+            if "scale" in output:
+                scale = output["scale"]
+                if hasattr(scale, "cpu"):
+                    scale = scale.cpu().numpy()
+                metadata["scale"] = scale.tolist()
+
+            outputs.append({
+                "glb_path": temp_glb_path,
+                "metadata": metadata
+            })
+            scene_metadata["objects"].append(metadata)
+
+        if len(outputs) == 0:
             raise HTTPException(
                 status_code=500,
-                detail="GLB generation failed - model did not produce GLB output"
+                detail="No valid 3D models generated from provided masks"
             )
 
-        temp_glb_path = temp_dir / "model.glb"
-        output["glb"].export(str(temp_glb_path))
-        print(f"[DEBUG] GLB saved: {temp_glb_path}")
+        # If single object, return just the GLB file
+        if len(outputs) == 1:
+            print(f"[DEBUG] Returning single GLB file")
+            return FileResponse(
+                path=outputs[0]["glb_path"],
+                media_type="application/octet-stream",
+                filename="model.glb"
+            )
 
-        # Return GLB file as response
-        # Note: We cannot use BackgroundTasks with FileResponse cleanup
-        # The file will be cleaned up manually after being sent
-        response = FileResponse(
-            path=temp_glb_path,
-            media_type="application/octet-stream",
-            filename="model.glb"
+        # Multiple objects: Create ZIP file
+        print(f"[DEBUG] Creating ZIP with {len(outputs)} objects")
+        zip_path = temp_dir / "scene.zip"
+
+        with zipfile.ZipFile(zip_path, 'w', zipfile.ZIP_DEFLATED) as zipf:
+            # Add all GLB files
+            for output in outputs:
+                glb_path = output["glb_path"]
+                zipf.write(glb_path, glb_path.name)
+
+            # Add scene metadata JSON
+            metadata_json = json.dumps(scene_metadata, indent=2)
+            zipf.writestr("scene.json", metadata_json)
+
+        print(f"[DEBUG] ZIP file created: {zip_path}")
+
+        # Return ZIP file
+        return FileResponse(
+            path=zip_path,
+            media_type="application/zip",
+            filename="scene.zip"
         )
-
-        # Schedule cleanup after response is sent
-        # Note: temp files will accumulate; consider implementing periodic cleanup
-        return response
 
     except HTTPException:
         # Re-raise HTTP exceptions
