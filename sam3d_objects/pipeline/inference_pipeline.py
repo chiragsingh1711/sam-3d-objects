@@ -478,6 +478,13 @@ class InferencePipeline:
         use_stage1_distillation=False,
         use_stage2_distillation=False,
         decode_formats=None,
+        # Quality parameters
+        simplify_ratio: float = 0.95,
+        texture_size: int = 1024,
+        fill_holes_max_size: float = 0.04,
+        texture_baking_views: int = 100,
+        texture_baking_resolution: int = 1024,
+        lambda_tv: float = 0.01,
     ) -> dict:
         """
         Parameters:
@@ -522,7 +529,16 @@ class InferencePipeline:
                 slat, self.decode_formats if decode_formats is None else decode_formats
             )
             outputs = self.postprocess_slat_output(
-                outputs, with_mesh_postprocess, with_texture_baking, use_vertex_color
+                outputs,
+                with_mesh_postprocess,
+                with_texture_baking,
+                use_vertex_color,
+                simplify_ratio,
+                texture_size,
+                fill_holes_max_size,
+                texture_baking_views,
+                texture_baking_resolution,
+                lambda_tv
             )
             logger.info("Finished!")
 
@@ -532,7 +548,17 @@ class InferencePipeline:
             }
 
     def postprocess_slat_output(
-        self, outputs, with_mesh_postprocess, with_texture_baking, use_vertex_color
+        self,
+        outputs,
+        with_mesh_postprocess,
+        with_texture_baking,
+        use_vertex_color,
+        simplify_ratio=0.95,
+        texture_size=1024,
+        fill_holes_max_size=0.04,
+        texture_baking_views=100,
+        texture_baking_resolution=1024,
+        lambda_tv=0.01
     ):
         # GLB files can be extracted from the outputs
         logger.info(
@@ -542,9 +568,13 @@ class InferencePipeline:
             glb = postprocessing_utils.to_glb(
                 outputs["gaussian"][0],
                 outputs["mesh"][0],
-                # Optional parameters
-                simplify=0.95,  # Ratio of triangles to remove in the simplification process
-                texture_size=1024,  # Size of the texture used for the GLB
+                # Quality parameters
+                simplify=simplify_ratio,
+                texture_size=texture_size,
+                fill_holes_max_size=fill_holes_max_size,
+                texture_baking_resolution=texture_baking_resolution,
+                texture_baking_views=texture_baking_views,
+                lambda_tv=lambda_tv,
                 verbose=False,
                 with_mesh_postprocess=with_mesh_postprocess,
                 with_texture_baking=with_texture_baking,

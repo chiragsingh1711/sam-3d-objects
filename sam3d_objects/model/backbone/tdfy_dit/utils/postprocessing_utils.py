@@ -589,6 +589,9 @@ def to_glb(
     fill_holes: bool = True,
     fill_holes_max_size: float = 0.04,
     texture_size: int = 1024,
+    texture_baking_resolution: int = 1024,
+    texture_baking_views: int = 100,
+    lambda_tv: float = 0.01,
     debug: bool = False,
     verbose: bool = True,
     with_mesh_postprocess=True,
@@ -606,6 +609,9 @@ def to_glb(
         fill_holes (bool): Whether to fill holes in the mesh.
         fill_holes_max_size (float): Maximum area of a hole to fill.
         texture_size (int): Size of the texture.
+        texture_baking_resolution (int): Resolution for multi-view rendering during texture baking.
+        texture_baking_views (int): Number of views to render for texture baking.
+        lambda_tv (float): Total variation regularization weight for texture optimization.
         debug (bool): Whether to print debug information.
         verbose (bool): Whether to print progress.
     """
@@ -636,7 +642,7 @@ def to_glb(
 
         # bake texture
         observations, extrinsics, intrinsics = render_multiview(
-            app_rep, resolution=1024, nviews=100
+            app_rep, resolution=texture_baking_resolution, nviews=texture_baking_views
         )
         masks = [np.any(observation > 0, axis=-1) for observation in observations]
         extrinsics = [extrinsics[i].cpu().numpy() for i in range(len(extrinsics))]
@@ -651,7 +657,7 @@ def to_glb(
             intrinsics,
             texture_size=texture_size,
             mode="opt",
-            lambda_tv=0.01,
+            lambda_tv=lambda_tv,
             verbose=verbose,
             rendering_engine=rendering_engine
         )

@@ -420,6 +420,16 @@ async def generate_direct(
     image: UploadFile = File(...),
     masks: List[UploadFile] = File(...),
     seed: Optional[int] = Form(None),
+
+    # Quality parameters
+    simplify_ratio: float = Form(0.95),
+    texture_size: int = Form(1024),
+    fill_holes_max_size: float = Form(0.04),
+    texture_baking_views: int = Form(100),
+    texture_baking_resolution: int = Form(1024),
+    lambda_tv: float = Form(0.01),
+
+    # Existing parameters
     stage1_only: bool = Form(False),
     with_mesh_postprocess: bool = Form(True),
     with_texture_baking: bool = Form(True),
@@ -435,6 +445,15 @@ async def generate_direct(
         image: Source image file (PNG/JPEG)
         masks: List of binary mask files (PNG grayscale), one per object
         seed: Random seed for reproducibility (optional)
+
+        Quality parameters:
+        simplify_ratio: Ratio of triangles to keep (0.0-1.0, default 0.95)
+        texture_size: Size of the output texture (default 1024)
+        fill_holes_max_size: Maximum hole size to fill in mesh (default 0.04)
+        texture_baking_views: Number of views for texture baking (default 100)
+        texture_baking_resolution: Resolution for texture baking rendering (default 1024)
+        lambda_tv: Total variation weight for texture optimization (default 0.01)
+
         stage1_only: Only run stage 1 (returns error, GLB needs stage 2)
         with_mesh_postprocess: Apply mesh post-processing
         with_texture_baking: Bake textures
@@ -534,7 +553,14 @@ async def generate_direct(
             output = inference(
                 image=image_np,  # RGB numpy array (H, W, 3)
                 mask=mask_np,    # Grayscale numpy array (H, W)
-                seed=seed
+                seed=seed,
+                # Quality parameters
+                simplify_ratio=simplify_ratio,
+                texture_size=texture_size,
+                fill_holes_max_size=fill_holes_max_size,
+                texture_baking_views=texture_baking_views,
+                texture_baking_resolution=texture_baking_resolution,
+                lambda_tv=lambda_tv
             )
             print(f"[DEBUG] Inference completed for mask {idx}")
 

@@ -104,6 +104,13 @@ class Inference:
         mask: Optional[Union[None, Image.Image, np.ndarray]],
         seed: Optional[int] = None,
         pointmap=None,
+        # Quality parameters
+        simplify_ratio: float = 0.95,
+        texture_size: int = 1024,
+        fill_holes_max_size: float = 0.04,
+        texture_baking_views: int = 100,
+        texture_baking_resolution: int = 1024,
+        lambda_tv: float = 0.01,
     ) -> dict:
         image = self.merge_mask_to_rgba(image, mask)
         return self._pipeline.run(
@@ -111,12 +118,19 @@ class Inference:
             None,
             seed,
             stage1_only=False,
-            with_mesh_postprocess=False,
-            with_texture_baking=False,
+            with_mesh_postprocess=True,
+            with_texture_baking=True,
             with_layout_postprocess=True,
             use_vertex_color=True,
             stage1_inference_steps=None,
             pointmap=pointmap,
+            # Quality parameters
+            simplify_ratio=simplify_ratio,
+            texture_size=texture_size,
+            fill_holes_max_size=fill_holes_max_size,
+            texture_baking_views=texture_baking_views,
+            texture_baking_resolution=texture_baking_resolution,
+            lambda_tv=lambda_tv,
         )
 
 
