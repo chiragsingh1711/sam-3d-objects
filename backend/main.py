@@ -554,6 +554,10 @@ async def generate_direct(
                 image=image_np,  # RGB numpy array (H, W, 3)
                 mask=mask_np,    # Grayscale numpy array (H, W)
                 seed=seed,
+                # Postprocessing parameters
+                with_mesh_postprocess=with_mesh_postprocess,
+                with_texture_baking=with_texture_baking,
+                with_layout_postprocess=with_layout_postprocess,
                 # Quality parameters
                 simplify_ratio=simplify_ratio,
                 texture_size=texture_size,

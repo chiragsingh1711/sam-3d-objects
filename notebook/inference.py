@@ -104,6 +104,10 @@ class Inference:
         mask: Optional[Union[None, Image.Image, np.ndarray]],
         seed: Optional[int] = None,
         pointmap=None,
+        # Postprocessing parameters
+        with_mesh_postprocess: bool = True,
+        with_texture_baking: bool = True,
+        with_layout_postprocess: bool = True,
         # Quality parameters
         simplify_ratio: float = 0.95,
         texture_size: int = 1024,
@@ -118,9 +122,9 @@ class Inference:
             None,
             seed,
             stage1_only=False,
-            with_mesh_postprocess=True,
-            with_texture_baking=True,
-            with_layout_postprocess=True,
+            with_mesh_postprocess=with_mesh_postprocess,
+            with_texture_baking=with_texture_baking,
+            with_layout_postprocess=with_layout_postprocess,
             use_vertex_color=True,
             stage1_inference_steps=None,
             pointmap=pointmap,

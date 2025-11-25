@@ -25,11 +25,15 @@ try:
         GaussianRasterizer,
         GaussianRasterizationSettings,
     )
+    INRIA_BACKEND_AVAILABLE = True
 except ImportError:
     warnings.warn(
         "'diff_gaussian_rasterization' module cannot be imported, backend 'inria' won't be available",
         ImportWarning,
     )
+    INRIA_BACKEND_AVAILABLE = False
+    GaussianRasterizer = None
+    GaussianRasterizationSettings = None
 
 from gsplat import rasterization
 
@@ -103,6 +107,11 @@ def render(
 
     # Backend-specific rasterization setup and execution
     if backend == "inria":
+        if not INRIA_BACKEND_AVAILABLE:
+            raise RuntimeError(
+                "Backend 'inria' requested but 'diff_gaussian_rasterization' is not installed. "
+                "Please use backend='gsplat' instead or install diff-gaussian-rasterization package."
+            )
         kernel_size = pipe.kernel_size
         subpixel_offset = torch.zeros(
             (int(viewpoint_camera.image_height), int(viewpoint_camera.image_width), 2),
