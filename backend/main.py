@@ -593,7 +593,14 @@ async def generate_direct(
                 print(f"[DEBUG] {key}: type={type(value)}, shape={getattr(value, 'shape', 'N/A')}")
 
             # Add transformation data if available in output
-            # Format optimized for Blender import
+            #
+            # CRITICAL COORDINATE SYSTEM CONVERSION:
+            # 1. Model outputs transformations in Z-up coordinate system
+            # 2. Mesh is converted from Z-up to Y-up during GLB export (postprocessing_utils.py:672)
+            #    Transformation: [X, Y, Z] -> [X, -Z, Y]
+            # 3. For Blender (Z-up), we must apply the SAME transformation to position/rotation
+            #    to match the rotated mesh coordinates
+
             if "translation" in output:
                 translation = output["translation"]
                 if hasattr(translation, "cpu"):
@@ -601,13 +608,21 @@ async def generate_direct(
 
                 # Flatten to 1D array if needed (handle shape (1,3) -> (3,))
                 translation = translation.flatten()
-                translation_list = translation.tolist()
+                x, y, z = translation
 
-                print(f"[DEBUG] Translation after flatten: {translation_list}")
+                print(f"[DEBUG] Translation (Z-up model space): [{x}, {y}, {z}]")
 
-                # Blender uses Z-up coordinate system
-                # Store in Blender-compatible format
-                metadata["blender_location"] = translation_list  # [x, y, z]
+                # Apply same rotation as mesh: Z-up to Y-up
+                # [X, Y, Z] -> [X, -Z, Y]
+                x_transformed = x
+                y_transformed = -z
+                z_transformed = y
+
+                print(f"[DEBUG] Translation (Y-up mesh space): [{x_transformed}, {y_transformed}, {z_transformed}]")
+
+                # For Blender import: Blender will treat the Y-up mesh as-is
+                # So we need Y-up coordinates
+                metadata["blender_location"] = [x_transformed, y_transformed, z_transformed]
 
             if "rotation" in output:
                 rotation = output["rotation"]
@@ -618,37 +633,73 @@ async def generate_direct(
                 rotation = rotation.flatten()
                 rotation_list = rotation.tolist()
 
-                print(f"[DEBUG] Rotation after flatten: {rotation_list}")
+                print(f"[DEBUG] Rotation quaternion (Z-up model space): {rotation_list}")
 
-                # Blender quaternion format: [w, x, y, z] (w first)
-                # Input might be [x, y, z, w] - need to check and convert
+                # Quaternion format check and conversion
                 if len(rotation_list) == 4:
-                    # Assume input is [x, y, z, w], convert to Blender format [w, x, y, z]
-                    x, y, z, w = rotation_list
-                    metadata["blender_rotation_quaternion"] = [w, x, y, z]
+                    # Model outputs quaternion in format [x,y,z,w] (from inference_utils.py:322)
+                    qx, qy, qz, qw = rotation_list
+
+                    # Convert quaternion from Z-up to Y-up coordinate system
+                    # The mesh rotation is: [X, Y, Z] -> [X, -Z, Y]
+                    # For quaternions, this rotation is represented as:
+                    # Rotation of -90 degrees around X-axis
+                    # Q_rotation = [sin(-45°), 0, 0, cos(-45°)] = [-0.707, 0, 0, 0.707]
+                    #
+                    # Actually, the rotation matrix [[1,0,0],[0,0,-1],[0,1,0]]
+                    # corresponds to a 90° rotation around X-axis
+                    # As quaternion: [sin(45°), 0, 0, cos(45°)] = [0.707, 0, 0, 0.707]
+
+                    import numpy as np
+
+                    # Quaternion for 90° rotation around X-axis (Z-up to Y-up)
+                    rot_x_90 = np.array([0.7071068, 0.0, 0.0, 0.7071068])  # [x, y, z, w]
+
+                    # Multiply quaternions: Q_result = Q_rotation * Q_original
+                    # Using Hamilton product
+                    q_orig = np.array([qx, qy, qz, qw])
+
+                    def quaternion_multiply(q1, q2):
+                        x1, y1, z1, w1 = q1
+                        x2, y2, z2, w2 = q2
+                        return np.array([
+                            w1*x2 + x1*w2 + y1*z2 - z1*y2,
+                            w1*y2 - x1*z2 + y1*w2 + z1*x2,
+                            w1*z2 + x1*y2 - y1*x2 + z1*w2,
+                            w1*w2 - x1*x2 - y1*y2 - z1*z2
+                        ])
+
+                    q_transformed = quaternion_multiply(rot_x_90, q_orig)
+                    qx_t, qy_t, qz_t, qw_t = q_transformed
+
+                    print(f"[DEBUG] Rotation quaternion (Y-up mesh space): [{qx_t}, {qy_t}, {qz_t}, {qw_t}]")
+
+                    # Blender format: [w, x, y, z] (w first)
+                    metadata["blender_rotation_quaternion"] = [qw_t, qx_t, qy_t, qz_t]
 
                     # Also convert to Euler angles (XYZ) for easier manual editing in Blender
-                    # Using quaternion to euler conversion
+                    # Using the TRANSFORMED quaternion
                     import math
 
                     # Quaternion to Euler (XYZ order) - Blender default
                     # From: https://en.wikipedia.org/wiki/Conversion_between_quaternions_and_Euler_angles
+                    # Using transformed quaternion values
 
                     # Roll (x-axis rotation)
-                    sinr_cosp = 2 * (w * x + y * z)
-                    cosr_cosp = 1 - 2 * (x * x + y * y)
+                    sinr_cosp = 2 * (qw_t * qx_t + qy_t * qz_t)
+                    cosr_cosp = 1 - 2 * (qx_t * qx_t + qy_t * qy_t)
                     roll = math.atan2(sinr_cosp, cosr_cosp)
 
                     # Pitch (y-axis rotation)
-                    sinp = 2 * (w * y - z * x)
+                    sinp = 2 * (qw_t * qy_t - qz_t * qx_t)
                     if abs(sinp) >= 1:
                         pitch = math.copysign(math.pi / 2, sinp)
                     else:
                         pitch = math.asin(sinp)
 
                     # Yaw (z-axis rotation)
-                    siny_cosp = 2 * (w * z + x * y)
-                    cosy_cosp = 1 - 2 * (y * y + z * z)
+                    siny_cosp = 2 * (qw_t * qz_t + qx_t * qy_t)
+                    cosy_cosp = 1 - 2 * (qy_t * qy_t + qz_t * qz_t)
                     yaw = math.atan2(siny_cosp, cosy_cosp)
 
                     # Blender uses radians for rotation
