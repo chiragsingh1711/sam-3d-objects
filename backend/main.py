@@ -585,13 +585,25 @@ async def generate_direct(
                 "mask_filename": mask_file.filename
             }
 
+            # Debug: Log what transformation keys are in output
+            transform_keys = [k for k in output.keys() if k in ["translation", "rotation", "scale"]]
+            print(f"[DEBUG] Transformation keys in output: {transform_keys}")
+            for key in transform_keys:
+                value = output[key]
+                print(f"[DEBUG] {key}: type={type(value)}, shape={getattr(value, 'shape', 'N/A')}")
+
             # Add transformation data if available in output
             # Format optimized for Blender import
             if "translation" in output:
                 translation = output["translation"]
                 if hasattr(translation, "cpu"):
                     translation = translation.cpu().numpy()
+
+                # Flatten to 1D array if needed (handle shape (1,3) -> (3,))
+                translation = translation.flatten()
                 translation_list = translation.tolist()
+
+                print(f"[DEBUG] Translation after flatten: {translation_list}")
 
                 # Blender uses Z-up coordinate system
                 # Store in Blender-compatible format
@@ -601,7 +613,12 @@ async def generate_direct(
                 rotation = output["rotation"]
                 if hasattr(rotation, "cpu"):
                     rotation = rotation.cpu().numpy()
+
+                # Flatten to 1D array if needed (handle shape (1,4) -> (4,))
+                rotation = rotation.flatten()
                 rotation_list = rotation.tolist()
+
+                print(f"[DEBUG] Rotation after flatten: {rotation_list}")
 
                 # Blender quaternion format: [w, x, y, z] (w first)
                 # Input might be [x, y, z, w] - need to check and convert
@@ -641,7 +658,13 @@ async def generate_direct(
                 scale = output["scale"]
                 if hasattr(scale, "cpu"):
                     scale = scale.cpu().numpy()
+
+                # Flatten to 1D array if needed (handle shape (1,3) -> (3,))
+                scale = scale.flatten()
                 scale_list = scale.tolist()
+
+                print(f"[DEBUG] Scale after flatten: {scale_list}")
+
                 metadata["blender_scale"] = scale_list  # [x, y, z]
 
             outputs.append({
