@@ -11,6 +11,7 @@ import shutil
 import argparse
 import json
 import zipfile
+import math
 from pathlib import Path
 from typing import Optional, Dict, Any, List
 from datetime import datetime
@@ -650,8 +651,6 @@ async def generate_direct(
                     # corresponds to a 90° rotation around X-axis
                     # As quaternion: [sin(45°), 0, 0, cos(45°)] = [0.707, 0, 0, 0.707]
 
-                    import numpy as np
-
                     # Quaternion for 90° rotation around X-axis (Z-up to Y-up)
                     rot_x_90 = np.array([0.7071068, 0.0, 0.0, 0.7071068])  # [x, y, z, w]
 
@@ -679,8 +678,6 @@ async def generate_direct(
 
                     # Also convert to Euler angles (XYZ) for easier manual editing in Blender
                     # Using the TRANSFORMED quaternion
-                    import math
-
                     # Quaternion to Euler (XYZ order) - Blender default
                     # From: https://en.wikipedia.org/wiki/Conversion_between_quaternions_and_Euler_angles
                     # Using transformed quaternion values
