@@ -623,7 +623,8 @@ async def generate_direct(
 
                 # For Blender import: Blender will treat the Y-up mesh as-is
                 # So we need Y-up coordinates
-                metadata["blender_location"] = [x_transformed, y_transformed, z_transformed]
+                # Convert to Python float for JSON serialization
+                metadata["blender_location"] = [float(x_transformed), float(y_transformed), float(z_transformed)]
 
             if "rotation" in output:
                 rotation = output["rotation"]
@@ -674,7 +675,8 @@ async def generate_direct(
                     print(f"[DEBUG] Rotation quaternion (Y-up mesh space): [{qx_t}, {qy_t}, {qz_t}, {qw_t}]")
 
                     # Blender format: [w, x, y, z] (w first)
-                    metadata["blender_rotation_quaternion"] = [qw_t, qx_t, qy_t, qz_t]
+                    # Convert numpy scalars to Python float for JSON serialization
+                    metadata["blender_rotation_quaternion"] = [float(qw_t), float(qx_t), float(qy_t), float(qz_t)]
 
                     # Also convert to Euler angles (XYZ) for easier manual editing in Blender
                     # Using the TRANSFORMED quaternion
@@ -700,7 +702,8 @@ async def generate_direct(
                     yaw = math.atan2(siny_cosp, cosy_cosp)
 
                     # Blender uses radians for rotation
-                    metadata["blender_rotation_euler"] = [roll, pitch, yaw]  # radians, XYZ order
+                    # Convert to Python float for JSON serialization
+                    metadata["blender_rotation_euler"] = [float(roll), float(pitch), float(yaw)]  # radians, XYZ order
 
             if "scale" in output:
                 scale = output["scale"]
@@ -713,7 +716,8 @@ async def generate_direct(
 
                 print(f"[DEBUG] Scale after flatten: {scale_list}")
 
-                metadata["blender_scale"] = scale_list  # [x, y, z]
+                # Convert numpy scalars to Python float for JSON serialization
+                metadata["blender_scale"] = [float(s) for s in scale_list]  # [x, y, z]
 
             outputs.append({
                 "glb_path": temp_glb_path,
