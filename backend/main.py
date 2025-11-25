@@ -643,23 +643,28 @@ async def generate_direct(
                     qx, qy, qz, qw = rotation_list
 
                     # Convert quaternion from Z-up to Y-up coordinate system
-                    # The mesh rotation is: [X, Y, Z] -> [X, -Z, Y]
-                    # For quaternions, this rotation is represented as:
-                    # Rotation of -90 degrees around X-axis
-                    # Q_rotation = [sin(-45°), 0, 0, cos(-45°)] = [-0.707, 0, 0, 0.707]
+                    # The mesh vertices are rotated: [X, Y, Z] -> [X, -Z, Y]
+                    # This is a +90° rotation around X-axis
                     #
-                    # Actually, the rotation matrix [[1,0,0],[0,0,-1],[0,1,0]]
-                    # corresponds to a 90° rotation around X-axis
-                    # As quaternion: [sin(45°), 0, 0, cos(45°)] = [0.707, 0, 0, 0.707]
+                    # For Blender (Z-up) to correctly position the Y-up mesh:
+                    # We need to apply the INVERSE rotation (-90° around X)
+                    # because the mesh is already physically rotated.
+                    #
+                    # Think of it this way:
+                    # - Model says "rotate object by Q in Z-up"
+                    # - Mesh gets rotated by +90° X (to Y-up format)
+                    # - To get final rotation Q in Blender, we need: (+90°X) * Q_blender = Q
+                    # - Therefore: Q_blender = (-90°X) * Q
 
-                    # Quaternion for 90° rotation around X-axis (Z-up to Y-up)
-                    rot_x_90 = np.array([0.7071068, 0.0, 0.0, 0.7071068])  # [x, y, z, w]
+                    # Quaternion for -90° rotation around X-axis (inverse of mesh transform)
+                    # For -90° around X: [sin(-45°), 0, 0, cos(-45°)] = [-0.7071068, 0, 0, 0.7071068]
+                    rot_x_neg90 = np.array([-0.7071068, 0.0, 0.0, 0.7071068])  # [x, y, z, w]
 
-                    # Multiply quaternions: Q_result = Q_rotation * Q_original
-                    # Using Hamilton product
+                    # Original rotation from model (in Z-up)
                     q_orig = np.array([qx, qy, qz, qw])
 
                     def quaternion_multiply(q1, q2):
+                        """Hamilton product of two quaternions in [x, y, z, w] format."""
                         x1, y1, z1, w1 = q1
                         x2, y2, z2, w2 = q2
                         return np.array([
@@ -669,7 +674,8 @@ async def generate_direct(
                             w1*w2 - x1*x2 - y1*y2 - z1*z2
                         ])
 
-                    q_transformed = quaternion_multiply(rot_x_90, q_orig)
+                    # Apply inverse rotation to compensate for mesh transformation
+                    q_transformed = quaternion_multiply(rot_x_neg90, q_orig)
                     qx_t, qy_t, qz_t, qw_t = q_transformed
 
                     print(f"[DEBUG] Rotation quaternion (Y-up mesh space): [{qx_t}, {qy_t}, {qz_t}, {qw_t}]")
