@@ -594,13 +594,7 @@ async def generate_direct(
                 print(f"[DEBUG] {key}: type={type(value)}, shape={getattr(value, 'shape', 'N/A')}")
 
             # Add transformation data if available in output
-            #
-            # CRITICAL COORDINATE SYSTEM CONVERSION:
-            # 1. Model outputs transformations in Z-up coordinate system
-            # 2. Mesh is converted from Z-up to Y-up during GLB export (postprocessing_utils.py:672)
-            #    Transformation: [X, Y, Z] -> [X, -Z, Y]
-            # 3. For Blender (Z-up), we must apply the SAME transformation to position/rotation
-            #    to match the rotated mesh coordinates
+            # Returns RAW transformations from SAM3D model without any coordinate conversion
 
             if "translation" in output:
                 translation = output["translation"]
@@ -609,22 +603,11 @@ async def generate_direct(
 
                 # Flatten to 1D array if needed (handle shape (1,3) -> (3,))
                 translation = translation.flatten()
-                x, y, z = translation
 
-                print(f"[DEBUG] Translation (Z-up model space): [{x}, {y}, {z}]")
+                print(f"[DEBUG] Raw translation from model: {translation}")
 
-                # Apply same rotation as mesh: Z-up to Y-up
-                # [X, Y, Z] -> [X, -Z, Y]
-                x_transformed = x
-                y_transformed = -z
-                z_transformed = y
-
-                print(f"[DEBUG] Translation (Y-up mesh space): [{x_transformed}, {y_transformed}, {z_transformed}]")
-
-                # For Blender import: Blender will treat the Y-up mesh as-is
-                # So we need Y-up coordinates
-                # Convert to Python float for JSON serialization
-                metadata["blender_location"] = [float(x_transformed), float(y_transformed), float(z_transformed)]
+                # Return raw values, convert to Python float for JSON serialization
+                metadata["blender_location"] = [float(translation[0]), float(translation[1]), float(translation[2])]
 
             if "rotation" in output:
                 rotation = output["rotation"]
@@ -633,81 +616,40 @@ async def generate_direct(
 
                 # Flatten to 1D array if needed (handle shape (1,4) -> (4,))
                 rotation = rotation.flatten()
-                rotation_list = rotation.tolist()
 
-                print(f"[DEBUG] Rotation quaternion (Z-up model space): {rotation_list}")
+                print(f"[DEBUG] Raw rotation quaternion from model: {rotation}")
 
-                # Quaternion format check and conversion
-                if len(rotation_list) == 4:
+                if len(rotation) == 4:
                     # Model outputs quaternion in format [x,y,z,w] (from inference_utils.py:322)
-                    qx, qy, qz, qw = rotation_list
+                    qx, qy, qz, qw = rotation
 
-                    # Convert quaternion from Z-up to Y-up coordinate system
-                    # The mesh vertices are rotated: [X, Y, Z] -> [X, -Z, Y]
-                    # This is a +90° rotation around X-axis
-                    #
-                    # For Blender (Z-up) to correctly position the Y-up mesh:
-                    # We need to apply the INVERSE rotation (-90° around X)
-                    # because the mesh is already physically rotated.
-                    #
-                    # Think of it this way:
-                    # - Model says "rotate object by Q in Z-up"
-                    # - Mesh gets rotated by +90° X (to Y-up format)
-                    # - To get final rotation Q in Blender, we need: (+90°X) * Q_blender = Q
-                    # - Therefore: Q_blender = (-90°X) * Q
-
-                    # Quaternion for -90° rotation around X-axis (inverse of mesh transform)
-                    # For -90° around X: [sin(-45°), 0, 0, cos(-45°)] = [-0.7071068, 0, 0, 0.7071068]
-                    rot_x_neg90 = np.array([-0.7071068, 0.0, 0.0, 0.7071068])  # [x, y, z, w]
-
-                    # Original rotation from model (in Z-up)
-                    q_orig = np.array([qx, qy, qz, qw])
-
-                    def quaternion_multiply(q1, q2):
-                        """Hamilton product of two quaternions in [x, y, z, w] format."""
-                        x1, y1, z1, w1 = q1
-                        x2, y2, z2, w2 = q2
-                        return np.array([
-                            w1*x2 + x1*w2 + y1*z2 - z1*y2,
-                            w1*y2 - x1*z2 + y1*w2 + z1*x2,
-                            w1*z2 + x1*y2 - y1*x2 + z1*w2,
-                            w1*w2 - x1*x2 - y1*y2 - z1*z2
-                        ])
-
-                    # Apply inverse rotation to compensate for mesh transformation
-                    q_transformed = quaternion_multiply(rot_x_neg90, q_orig)
-                    qx_t, qy_t, qz_t, qw_t = q_transformed
-
-                    print(f"[DEBUG] Rotation quaternion (Y-up mesh space): [{qx_t}, {qy_t}, {qz_t}, {qw_t}]")
-
+                    # Return raw quaternion values
                     # Blender format: [w, x, y, z] (w first)
                     # Convert numpy scalars to Python float for JSON serialization
-                    metadata["blender_rotation_quaternion"] = [float(qw_t), float(qx_t), float(qy_t), float(qz_t)]
+                    metadata["blender_rotation_quaternion"] = [float(qw), float(qx), float(qy), float(qz)]
 
-                    # Also convert to Euler angles (XYZ) for easier manual editing in Blender
-                    # Using the TRANSFORMED quaternion
-                    # Quaternion to Euler (XYZ order) - Blender default
+                    # Also convert to Euler angles (XYZ) for easier manual editing
+                    # Using raw quaternion values from model
+                    # Quaternion to Euler (XYZ order)
                     # From: https://en.wikipedia.org/wiki/Conversion_between_quaternions_and_Euler_angles
-                    # Using transformed quaternion values
 
                     # Roll (x-axis rotation)
-                    sinr_cosp = 2 * (qw_t * qx_t + qy_t * qz_t)
-                    cosr_cosp = 1 - 2 * (qx_t * qx_t + qy_t * qy_t)
+                    sinr_cosp = 2 * (qw * qx + qy * qz)
+                    cosr_cosp = 1 - 2 * (qx * qx + qy * qy)
                     roll = math.atan2(sinr_cosp, cosr_cosp)
 
                     # Pitch (y-axis rotation)
-                    sinp = 2 * (qw_t * qy_t - qz_t * qx_t)
+                    sinp = 2 * (qw * qy - qz * qx)
                     if abs(sinp) >= 1:
                         pitch = math.copysign(math.pi / 2, sinp)
                     else:
                         pitch = math.asin(sinp)
 
                     # Yaw (z-axis rotation)
-                    siny_cosp = 2 * (qw_t * qz_t + qx_t * qy_t)
-                    cosy_cosp = 1 - 2 * (qy_t * qy_t + qz_t * qz_t)
+                    siny_cosp = 2 * (qw * qz + qx * qy)
+                    cosy_cosp = 1 - 2 * (qy * qy + qz * qz)
                     yaw = math.atan2(siny_cosp, cosy_cosp)
 
-                    # Blender uses radians for rotation
                     # Convert to Python float for JSON serialization
                     metadata["blender_rotation_euler"] = [float(roll), float(pitch), float(yaw)]  # radians, XYZ order
 
@@ -718,12 +660,11 @@ async def generate_direct(
 
                 # Flatten to 1D array if needed (handle shape (1,3) -> (3,))
                 scale = scale.flatten()
-                scale_list = scale.tolist()
 
-                print(f"[DEBUG] Scale after flatten: {scale_list}")
+                print(f"[DEBUG] Raw scale from model: {scale}")
 
-                # Convert numpy scalars to Python float for JSON serialization
-                metadata["blender_scale"] = [float(s) for s in scale_list]  # [x, y, z]
+                # Return raw values, convert numpy scalars to Python float for JSON serialization
+                metadata["blender_scale"] = [float(scale[0]), float(scale[1]), float(scale[2])]
 
             outputs.append({
                 "glb_path": temp_glb_path,
